@@ -57,7 +57,7 @@ body {
 }
 
 .control-app-layout { display: grid; grid-template-rows: 64px 1fr; height: 100vh; overflow: hidden; }
-#app-container { display: grid; grid-template-rows: auto 1fr; height: 100%; overflow: hidden; }
+#app-container { display: grid; grid-template-rows: auto 1fr; height: calc(100% - 60px);; overflow: hidden; }
 
 /* ── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; }
