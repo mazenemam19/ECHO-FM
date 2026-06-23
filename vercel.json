@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "pip install -r requirements-frontend.txt && python sync_config.py --env production",
+  "buildCommand": "python --version && pip install -r requirements-frontend.txt --break-system-packages && python sync_config.py --env production",
   "outputDirectory": "."
 }
