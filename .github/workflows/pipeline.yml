@@ -123,3 +123,14 @@ jobs:
           else
             echo "[Pipeline] Skipping website update: NETLIFY_BUILD_HOOK secret is not set."
           fi
+      
+      - name: Trigger Vercel deployment
+        if: success() && github.event.inputs.dry_run != 'true'
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$VERCEL_DEPLOY_HOOK" ]; then
+            echo "VERCEL_DEPLOY_HOOK is not set" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --request POST "$VERCEL_DEPLOY_HOOK"

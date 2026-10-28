@@ -51,6 +51,7 @@ Copy `.env.example` to `.env` and fill the keys.
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`: Required for production persistence.
 - `YOUTUBE_CLIENT_ID` / `SECRET` / `REFRESH_TOKEN`: Automated publishing.
 - `NETLIFY_BUILD_HOOK`: Webhook URL for dashboard deployment.
+- `VERCEL_DEPLOY_HOOK`: Webhook URL for dashboard deployment.
 
 **Optional Keys (High-Fidelity TTS):**
 - `CARTESIA_API_KEY` (Tier 1) / `KOKORO_API_KEY` (Tier 2).
