@@ -122,7 +122,7 @@ The system behavior is strictly controlled by the `--env` flag:
 | :--- | :--- | :--- |
 | **Database** | SQLite (`ai_radio_dev.db`) | Supabase Cloud |
 | **AI News Context** | Filtered / Cached Headlines | 20+ Real-time Global Headlines |
-| **TTS Engine** | Standard `edge-tts` (Free) | None |
+| **TTS Engine** | Standard `edge-tts` (Free) | Standard `edge-tts` (Free) |
 | **Cover Art** | FFmpeg simple color | Pixel-Perfect Pillow (PIL) Overlays |
 | **Publishing** | `output/` folder only | YouTube Data API v3 |
 | **UI Updates** | Local `config.json` sync | Netlify Webhook Rebuild |
