@@ -28,11 +28,21 @@ class TestTTSPriority(unittest.TestCase):
     @patch("tts_generator._edge_tts_async", new_callable=AsyncMock)
     def test_edge_tts_retries_transient_failures(self, mock_async, mock_sleep):
         """Should retry Edge TTS with backoff before succeeding."""
-        mock_async.side_effect = [(False, "temporary failure"), (False, "temporary failure"), (True, "")]
+        mock_async.side_effect = [(False, "TimeoutError"), (False, "TimeoutError"), (True, "")]
 
         self.assertTrue(tts_generator._run_edge_tts("Test", "ALISTAIR", self.output_path))
         self.assertEqual(mock_async.await_count, 3)
         mock_sleep.assert_has_calls([call(2), call(4)])
+
+    @patch("tts_generator.time.sleep")
+    @patch("tts_generator._edge_tts_async", new_callable=AsyncMock)
+    def test_edge_tts_fast_fails_on_permanent_errors(self, mock_async, mock_sleep):
+        """Should not retry permanent Edge TTS failures."""
+        mock_async.return_value = (False, "Invalid voice name")
+
+        self.assertFalse(tts_generator._run_edge_tts("Test", "ALISTAIR", self.output_path))
+        self.assertEqual(mock_async.await_count, 1)
+        mock_sleep.assert_not_called()
 
     @patch("tts_generator._run_edge_tts")
     @patch("tts_generator._is_audio_valid")

@@ -185,6 +185,21 @@ def _generate_ffmpeg_audio_fallback(text: str, path: str) -> bool:
 
 _EDGE_TTS_MAX_ATTEMPTS = 3
 _EDGE_TTS_RETRY_DELAY_SECONDS = 2
+_EDGE_TTS_RETRYABLE_ERROR_MARKERS = (
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "ConnectionResetError",
+    "Server disconnected",
+    "temporarily unavailable",
+    "rate limit",
+)
+
+
+def _is_retryable_edge_tts_error(msg: str) -> bool:
+    return _is_network_error(msg) or any(m in msg for m in _EDGE_TTS_RETRYABLE_ERROR_MARKERS)
 
 async def _edge_tts_async(text: str, voice: str, path: str) -> tuple[bool, str]:
     """Returns (success, error_message)."""
@@ -207,7 +222,9 @@ def _run_edge_tts(text: str, voice: str, path: str) -> bool:
     explicit FFmpeg fallback for network-restricted environments.
     """
     last_error = ""
+    attempts_made = 0
     for attempt in range(1, _EDGE_TTS_MAX_ATTEMPTS + 1):
+        attempts_made = attempt
         try:
             ok, err = asyncio.run(_edge_tts_async(text, voice, path))
         except RuntimeError as exc:
@@ -231,10 +248,12 @@ def _run_edge_tts(text: str, voice: str, path: str) -> bool:
             f"[TTS] edge-tts attempt {attempt}/{_EDGE_TTS_MAX_ATTEMPTS} failed "
             f"(voice={voice}): {err}"
         )
+        if not _is_retryable_edge_tts_error(err):
+            break
         if attempt < _EDGE_TTS_MAX_ATTEMPTS:
             time.sleep(_EDGE_TTS_RETRY_DELAY_SECONDS * (2 ** (attempt - 1)))
 
-    print(f"[TTS] edge-tts synthesis failed after {_EDGE_TTS_MAX_ATTEMPTS} attempts (voice={voice}): {last_error}")
+    print(f"[TTS] edge-tts synthesis failed after {attempts_made} attempts (voice={voice}): {last_error}")
     if _is_network_error(last_error):
         return _generate_ffmpeg_audio_fallback(text, path)
     return False
