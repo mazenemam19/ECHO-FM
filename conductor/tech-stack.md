@@ -9,9 +9,7 @@ Echo FM utilizes a hybrid local/cloud stack designed for high availability and z
 ## Artificial Intelligence & Synthesis
 - **Google Gemini:** 3.5/3.1 series used for stable, high-quota script generation.
 - **Groq:** Primary provider for high-tier models including **DeepSeek R1** (Reasoning), **Llama 3.3 70B**, and **Llama 4 Scout** (High Speed).
-- **Groq Orpheus:** Gold-standard Text-to-Speech synthesis for production environments.
-- **Cartesia Sonic:** High-emotion cloud TTS provider used as a primary cloud fallback.
-- **edge-tts:** Local-first, network-resilient TTS fallback for development and CI/CD.
+- **edge-tts:** Free TTS provider used across development, CI/CD, and production.
 
 ## Data Persistence & Infrastructure
 - **Supabase:** Cloud database and storage for production episodes and artifacts.

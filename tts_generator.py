@@ -2,7 +2,7 @@
 tts_generator.py — AI Radio Echo
 Text-to-speech generation with high-fidelity mixing.
 
-Cloud path:  Cartesia Sonic 3.5 → Kokoro Cloud → edge-tts fallback
+TTS provider: edge-tts (free)
 Mixing:      Pydub for SFX overlays, looping ambient tracks, and voice styles.
 
 Voice Styles:
@@ -14,32 +14,12 @@ Voice Styles:
 """
 
 import asyncio
-import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 from pydub import AudioSegment
-
-# Cartesia Sonic 3.5 curated voices (Verified June 2026)
-_CARTESIA_VOICES: dict[str, str] = {
-    "ALISTAIR":    "c8f7835e-28a3-4f0c-80d7-c1302ac62aae", # Alistair
-    "VICTORIA":    "dc30854e-e398-4579-9dc8-16f6cb2c19b9", # Victoria
-    "RONALD":      "5ee9feff-1265-424a-9d7f-8e4d431a12c7", # Ronald
-    "CASPER":      "4f7f1324-1853-48a6-b294-4e78e8036a83", # Casper
-    "MARCUS":      "8205562d-949e-49fb-9407-a690f3b06385", # Marcus
-}
-_CARTESIA_DEFAULT_VOICE = "c8f7835e-28a3-4f0c-80d7-c1302ac62aae"
-
-# Kokoro-82M curated voices (June 2026)
-_KOKORO_VOICES: dict[str, str] = {
-    "ALISTAIR":    "bm_george",
-    "VICTORIA":    "bf_emma",
-    "RONALD":      "am_adam",
-    "CASPER":      "bm_lewis",
-    "MARCUS":      "am_michael",
-}
-_KOKORO_DEFAULT_VOICE = "bm_george"
 
 # ── Network-error detection ───────────────────────────────────────────────────
 
@@ -203,6 +183,24 @@ def _generate_ffmpeg_audio_fallback(text: str, path: str) -> bool:
 
 # ── edge-tts ──────────────────────────────────────────────────────────────────
 
+_EDGE_TTS_MAX_ATTEMPTS = 3
+_EDGE_TTS_RETRY_DELAY_SECONDS = 2
+_EDGE_TTS_RETRYABLE_ERROR_MARKERS = (
+    "429",
+    "500",
+    "502",
+    "503",
+    "504",
+    "ConnectionResetError",
+    "Server disconnected",
+    "temporarily unavailable",
+    "rate limit",
+)
+
+
+def _is_retryable_edge_tts_error(msg: str) -> bool:
+    return _is_network_error(msg) or any(m in msg for m in _EDGE_TTS_RETRYABLE_ERROR_MARKERS)
+
 async def _edge_tts_async(text: str, voice: str, path: str) -> tuple[bool, str]:
     """Returns (success, error_message)."""
     try:
@@ -220,129 +218,45 @@ def _run_edge_tts(text: str, voice: str, path: str) -> bool:
     Falls back to an explicit new event loop if one is already running
     (RuntimeError: 'event loop already running').
 
-    On network/SSL failure: falls back to FFmpeg silent audio (environment
-    restriction, not a code bug).
-    On any other failure: logs and returns False immediately.
+    Retries transient failures with exponential backoff before applying the
+    explicit FFmpeg fallback for network-restricted environments.
     """
-    try:
-        ok, err = asyncio.run(_edge_tts_async(text, voice, path))
-    except RuntimeError as exc:
-        exc_str = str(exc)
-        if "event loop" in exc_str.lower():
-            loop = asyncio.new_event_loop()
-            try:
-                ok, err = loop.run_until_complete(_edge_tts_async(text, voice, path))
-            finally:
-                loop.close()
-        else:
-            print(f"[TTS] asyncio error running edge-tts: {exc}")
-            return False
+    last_error = ""
+    attempts_made = 0
+    for attempt in range(1, _EDGE_TTS_MAX_ATTEMPTS + 1):
+        attempts_made = attempt
+        try:
+            ok, err = asyncio.run(_edge_tts_async(text, voice, path))
+        except RuntimeError as exc:
+            exc_str = str(exc)
+            if "event loop" in exc_str.lower():
+                loop = asyncio.new_event_loop()
+                try:
+                    ok, err = loop.run_until_complete(_edge_tts_async(text, voice, path))
+                finally:
+                    loop.close()
+            else:
+                ok, err = False, exc_str
 
-    if ok:
-        return True
+        if ok:
+            if attempt > 1:
+                print(f"[TTS] edge-tts succeeded on attempt {attempt}.")
+            return True
 
-    print(f"[TTS] edge-tts synthesis failed (voice={voice}): {err}")
-    if _is_network_error(err):
+        last_error = err
+        print(
+            f"[TTS] edge-tts attempt {attempt}/{_EDGE_TTS_MAX_ATTEMPTS} failed "
+            f"(voice={voice}): {err}"
+        )
+        if not _is_retryable_edge_tts_error(err):
+            break
+        if attempt < _EDGE_TTS_MAX_ATTEMPTS:
+            time.sleep(_EDGE_TTS_RETRY_DELAY_SECONDS * (2 ** (attempt - 1)))
+
+    print(f"[TTS] edge-tts synthesis failed after {attempts_made} attempts (voice={voice}): {last_error}")
+    if _is_network_error(last_error):
         return _generate_ffmpeg_audio_fallback(text, path)
     return False
-
-
-# ── Cartesia Sonic 3.5 ────────────────────────────────────────────────────────
-
-def _run_cartesia_tts(text: str, voice: str, path: str, voice_style: str = "normal") -> bool:
-    """
-    Submit text to Cartesia Sonic 3.5 TTS and write the audio to `path`.
-    
-    On any error: return False (caller falls through to next provider).
-    """
-    api_key = os.environ.get("CARTESIA_API_KEY", "").strip()
-    if not api_key:
-        print("[TTS] CARTESIA_API_KEY not set — skipping Cartesia Sonic.")
-        return False
-
-    cartesia_voice = _CARTESIA_VOICES.get(voice, _CARTESIA_DEFAULT_VOICE)
-    
-    # Map styles to Cartesia numeric speed (0.6 - 1.5)
-    speed = 1.0
-    if voice_style in ("grave", "deadpan"):
-        speed = 0.9
-    if voice_style == "excited":
-        speed = 1.1
-
-    try:
-        import requests
-        url = "https://api.cartesia.ai/tts/bytes"
-        headers = {
-            "X-API-Key": api_key,
-            "Cartesia-Version": "2024-06-10",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model_id": "sonic-3.5",
-            "transcript": text,
-            "voice": {
-                "mode": "id",
-                "id": cartesia_voice,
-            },
-            "output_format": {
-                "container": "mp3",
-                "sample_rate": 22050,
-            },
-            "generation_config": {
-                "speed": speed,
-            }
-        }
-
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        if resp.status_code == 200:
-            Path(path).write_bytes(resp.content)
-            print(f"[TTS] Cartesia Sonic OK → {path}")
-            return True
-            
-        print(f"[TTS] Cartesia failed ({resp.status_code}): {resp.text}")
-        return False
-
-    except Exception as exc:
-        print(f"[TTS] Cartesia error: {exc}")
-        return False
-
-
-# ── Kokoro Cloud (fal.ai / OpenAI-Compatible) ────────────────────────────────
-
-def _run_kokoro_tts(text: str, voice: str, path: str) -> bool:
-    """
-    Submit text to Kokoro Cloud TTS and write audio to `path`.
-    Uses an OpenAI-compatible endpoint (common for Kokoro providers in 2026).
-    
-    On any error: return False (caller falls through).
-    """
-    api_key = os.environ.get("KOKORO_API_KEY", "").strip()
-    base_url = os.environ.get("KOKORO_BASE_URL", "https://api.fal.ai/v1/openai").strip()
-    
-    if not api_key:
-        print("[TTS] KOKORO_API_KEY not set — skipping Kokoro Cloud.")
-        return False
-
-    kokoro_voice = _KOKORO_VOICES.get(voice, _KOKORO_DEFAULT_VOICE)
-
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url=base_url)
-
-        response = client.audio.speech.create(
-            model="kokoro",
-            voice=kokoro_voice,
-            input=text,
-        )
-
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        response.stream_to_file(path)
-        print(f"[TTS] Kokoro Cloud OK → {path} (voice={kokoro_voice})")
-        return True
-
-    except Exception as exc:
-        print(f"[TTS] Kokoro error: {exc}")
-        return False
 
 
 # ── TTS Quality Guard ─────────────────────────────────────────────────────────
@@ -420,8 +334,7 @@ def generate_segment_audio(
 ) -> tuple[bool, str]:
     """
     Generate TTS audio and apply voice styles/SFX (Step 1 & 2).
-    Includes quality-guard fallback: if a premium engine produces invalid audio, 
-    it tries the next engine in the priority chain.
+    Includes a quality guard for generated Edge TTS audio.
 
     Returns:
         (success, engine_name)
@@ -436,12 +349,7 @@ def generate_segment_audio(
     engine_used = "failed"
 
     if forced_engine:
-        # Strict mode: no fallback
-        if forced_engine == "cartesia-sonic":
-            success = _run_cartesia_tts(text, voice, path, voice_style)
-        elif forced_engine == "kokoro-cloud":
-            success = _run_kokoro_tts(text, voice, path)
-        elif forced_engine == "edge-tts":
+        if forced_engine == "edge-tts":
             success = _run_edge_tts(text, voice, path)
         
         if success and not _is_audio_valid(path, word_count):
@@ -449,32 +357,17 @@ def generate_segment_audio(
             success = False
         engine_used = forced_engine
     else:
-        # Priority Chain with Quality Guard
-        engines = []
-        if use_cloud:
-            engines.extend(["cartesia-sonic", "kokoro-cloud"])
-        engines.append("edge-tts")
-
-        for engine in engines:
-            if engine == "cartesia-sonic":
-                ok = _run_cartesia_tts(text, voice, path, voice_style)
-            elif engine == "kokoro-cloud":
-                ok = _run_kokoro_tts(text, voice, path)
+        ok = _run_edge_tts(text, voice, path)
+        if ok:
+            if _is_audio_valid(path, word_count):
+                success = True
+                engine_used = "edge-tts"
             else:
-                ok = _run_edge_tts(text, voice, path)
-            
-            if ok:
-                if _is_audio_valid(path, word_count):
-                    success = True
-                    engine_used = engine
-                    break
-                else:
-                    print(f"[TTS] Quality Check Failed for '{engine}'. Falling back...")
-                    if Path(path).exists():
-                        Path(path).unlink()
+                print("[TTS] Quality Check Failed for 'edge-tts'.")
+                if Path(path).exists():
+                    Path(path).unlink()
         
         if not success:
-            # Absolute last resort: silent fallback to keep pipeline alive in restrictive envs
             success = _generate_ffmpeg_audio_fallback(text, path)
             engine_used = "silent-fallback"
 
