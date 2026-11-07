@@ -54,13 +54,10 @@ _MIN_DURATION: dict[str, int] = {
 
 MAX_DURATION_SECS = 888  # 14.8 minutes (Safe YouTube threshold)
 
-# Cloud TTS: Premium high-fidelity tiers; local TTS: edge-tts only
-_CLOUD_TTS_ENVS: frozenset[str] = frozenset({"prod-models", "production"})
-
 # Real YouTube upload only in 'production' (and never during dry-run)
 _YOUTUBE_ENVS: frozenset[str] = frozenset({"production"})
 
-# Speaker → edge-tts voice (tts_generator normalises to specific premium voices in cloud mode)
+# Speaker → edge-tts voice
 SPEAKER_VOICES: dict[str, str] = {
     "ALISTAIR": "en-US-GuyNeural",
     "VICTORIA": "en-US-AriaNeural",
@@ -732,7 +729,6 @@ def main() -> None:
         f"{'=' * 60}\n"
     )
 
-    use_cloud_tts: bool = env in _CLOUD_TTS_ENVS
     use_youtube: bool = (env in _YOUTUBE_ENVS) and (not dry_run)
     min_duration: int = _MIN_DURATION[env]
 
@@ -827,12 +823,7 @@ def main() -> None:
     print(f"[3/10] Generating TTS audio for {len(segments)} segment(s)...")
     from tts_generator import generate_segment_audio
 
-    # Define the high-fidelity priority chain
-    engine_tiers = (
-        ["cartesia-sonic", "kokoro-cloud", "edge-tts"]
-        if use_cloud_tts
-        else ["edge-tts"]
-    )
+    engine_tiers = ["edge-tts"]
 
     final_segment_files: list[Path] = []
     actual_narrator_model = "unknown"
@@ -854,7 +845,7 @@ def main() -> None:
                     text=seg["text"],
                     voice=voice,
                     path=str(seg_path),
-                    use_cloud=use_cloud_tts,
+                    use_cloud=False,
                     forced_engine=engine,
                     voice_style=seg.get("voice_style", "normal"),
                     sfx_pre=seg.get("sfx_pre"),

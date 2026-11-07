@@ -53,15 +53,12 @@ Copy `.env.example` to `.env` and fill the keys.
 - `NETLIFY_BUILD_HOOK`: Webhook URL for dashboard deployment.
 - `VERCEL_DEPLOY_HOOK`: Webhook URL for dashboard deployment.
 
-**Optional Keys (High-Fidelity TTS):**
-- `CARTESIA_API_KEY` (Tier 1) / `KOKORO_API_KEY` (Tier 2).
-
 ## 🚀 Scripts Reference (`package.json`)
 
 - `npm start`: Runs the local pipeline (SQLite + edge-tts).
 - `npm run lint`: Runs `ruff check .` via the Python proxy.
 - `npm run dry-run`: Production-style run with mocked AI responses.
-- `npm run prod`: Full production broadcast (Supabase + Premium TTS + YouTube).
+- `npm run prod`: Full production broadcast (Supabase + free Edge TTS + YouTube).
 - `npm run verify`: Health check for APIs, DB, and local binaries.
 - `npm test`: Runs the automated test suite (pytest).
 - `npm run sync-config`: Manually force a metadata synchronization.
@@ -79,7 +76,7 @@ Constructs a complex prompt containing the 20-item news feed and station memory.
 
 ### Step 3 — TTS Synthesis (`tts_generator.py`)
 - **Parallel Generation:** Narrates all 13 segments concurrently using a `ThreadPoolExecutor` (5 workers), reducing synthesis time from ~5 minutes to ~60 seconds.
-- **Unified Master Engine:** Attempts the entire episode with one engine (Cartesia → Kokoro → Edge) to ensure vocal consistency. A **Quality Guard** rejects any audio with a WPM > 300.
+- **Unified Master Engine:** Uses free Edge TTS for the entire episode to ensure vocal consistency. Transient synthesis failures are retried with exponential backoff, and a **Quality Guard** rejects any audio with a WPM > 300.
 
 ### Step 4 — Audio Assembly & Mastering
 Concatenates segments using Pydub and applies a **Loudness Normalization Pass** (Target: -14 LUFS) for professional streaming consistency.

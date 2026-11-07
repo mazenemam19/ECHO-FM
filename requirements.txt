@@ -10,10 +10,9 @@ python-dotenv>=1.0.0        # .env file loading (optional; CI injects secrets di
 # ── AI providers ──────────────────────────────────────────────────────────────
 google-genai>=0.1.0         # Gemini (mandatory for all envs — local fallback)
 groq>=0.11.0                # Groq LLM + Orpheus TTS (prod-models, production only)
-openai>=1.0.0               # Kokoro Cloud (fal.ai / OpenAI compatible)
 
 # ── TTS ───────────────────────────────────────────────────────────────────────
-edge-tts>=6.1.9             # Local TTS fallback (all envs including CI)
+edge-tts>=6.1.9             # Free TTS provider (all envs including CI)
 pydub>=0.25.1               # Audio mixing and post-processing
 
 # ── Database ──────────────────────────────────────────────────────────────────

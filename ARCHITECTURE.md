@@ -42,10 +42,7 @@ flowchart TD
     subgraph P3 ["Phase 3: Production Studio"]
         AI --> S3["Step 3: Unified Master TTS<br/>(tts_generator.py)"]
         
-        subgraph TTS ["Engine Cascade"]
-            C1(["Cartesia Sonic 3.5"]) -.->|Fail| C2(["Kokoro Cloud"])
-            C2 -.->|Fail| C3(["Edge-TTS Standard"])
-        end
+        TTS(["Edge-TTS Standard<br/>(free, retried)"])
         S3 --> TTS
         
         TTS --> S4["Step 4: SFX Mixing & LUFS Mastering<br/>(pydub)"]
@@ -94,14 +91,14 @@ flowchart TD
 ## 🧠 Technical Design Principles
 
 ### 1. Unified Master Engine (Narration Consistency)
-Echo FM maintains vocal consistency by selecting a **Single Master Engine** per broadcast. If a premium engine (Cartesia) fails mid-episode, the system **wipes all partial audio segments** and restarts the entire narration from segment 1 using the next tier (Kokoro or Edge-TTS). This prevents jarring shifts in audio quality within a single show.
+Echo FM maintains vocal consistency by selecting **Edge-TTS** as the single master engine for each broadcast. Transient synthesis failures are retried with exponential backoff before the segment is treated as failed.
 
 ### 2. Resilience & Retry Logic
 The system is designed to "fail forward" through multiple layers:
 - **AI Synthesis Retry:** If the primary LLM fails validation, the system retries once more. If both fail, it moves to the next model in the prioritized **Smart Router** queue.
 - **Recursive Expansion Layer:** If a model returns high-quality content but fails the 100-word floor on the final attempt, the system triggers a targeted expansion pass using the same model to lengthen the segment while preserving tone.
 - **JSON Healer & Anchoring:** A custom brace-walking algorithm repairs truncated JSON. Every segment includes a `word_count` metadata key that the model must self-report, anchoring its attention on length (aiming for 130-160 words) while validating against a 100-word stable floor.
-- **Master Engine Fallback:** To maintain vocal consistency, the station uses a single "Master Engine" (Cartesia → Kokoro → Edge-TTS) per episode. If an engine fails mid-broadcast, the system **wipes all partial audio artifacts** and restarts the entire narration from segment 1 using the next available engine.
+- **Edge-TTS Retry:** Each Edge-TTS request is retried with exponential backoff before the pipeline reports a failure.
 
 ### 3. Audio Engineering (The Mixer)
 The `tts_generator.py` and `main.py` collaborate to produce radio-quality audio:
@@ -125,7 +122,7 @@ The system behavior is strictly controlled by the `--env` flag:
 | :--- | :--- | :--- |
 | **Database** | SQLite (`ai_radio_dev.db`) | Supabase Cloud |
 | **AI News Context** | Filtered / Cached Headlines | 20+ Real-time Global Headlines |
-| **TTS Engine** | Standard `edge-tts` (Free) | Premium `Cartesia` / `Kokoro` |
+| **TTS Engine** | Standard `edge-tts` (Free) | None |
 | **Cover Art** | FFmpeg simple color | Pixel-Perfect Pillow (PIL) Overlays |
 | **Publishing** | `output/` folder only | YouTube Data API v3 |
 | **UI Updates** | Local `config.json` sync | Netlify Webhook Rebuild |

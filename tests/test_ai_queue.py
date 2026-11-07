@@ -38,18 +38,10 @@ class TestAIQueue(unittest.TestCase):
         self.assertEqual(ai_client.MODEL_SET_B, expected_b, "AI MODEL_SET_B is not the reverse of Set A!")
 
     def test_audio_production_tier(self):
-        """Verify the priority order of high-fidelity TTS engines for production."""
+        """Verify production uses the free Edge TTS engine."""
         source = inspect.getsource(tts_generator.generate_segment_audio)
         
-        # Verify the priority order: Cartesia -> Kokoro -> Edge-TTS
-        self.assertIn("_run_cartesia_tts", source, "Production audio missing Cartesia tier.")
-        self.assertIn("_run_kokoro_tts", source, "Production audio missing Kokoro tier.")
-        
-        # Check that Cartesia is attempted before Kokoro
-        idx_cartesia = source.find("_run_cartesia_tts")
-        idx_kokoro = source.find("_run_kokoro_tts")
-        
-        self.assertTrue(idx_cartesia < idx_kokoro, "Production TTS priority order has drifted!")
+        self.assertIn("_run_edge_tts", source, "Production audio missing Edge TTS.")
 
     def test_audio_non_production_tier(self):
         """Verify that local/non-production runs use only edge-tts or silent fallback."""
